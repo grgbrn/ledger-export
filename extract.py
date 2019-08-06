@@ -2,6 +2,7 @@ import csv
 import datetime
 import os
 import subprocess
+from dataclasses import dataclass
 from typing import Dict, Tuple, Iterator
 
 def until_now(year: int, month: int) -> Iterator[Tuple[int, int]]:
@@ -23,7 +24,13 @@ def dateiter(year: int, month: int) -> Iterator[Tuple[int,int]]:
             month = 1
             year += 1
 
-def ledger_monthly_bal(year: int, month: int) -> Dict[str, str]:
+@dataclass
+class MonthlyReport:
+    year: int
+    month: int
+    data: Dict[str,str]
+
+def ledger_monthly(year: int, month: int) -> MonthlyReport:
     "call ledger to get category balance for a given month"
     # confirm that '-e' does what i think!
 
@@ -42,7 +49,9 @@ def ledger_monthly_bal(year: int, month: int) -> Dict[str, str]:
     proc = subprocess.run(cmd, capture_output=True)
     proc.check_returncode()
 
-    return parse_ledger_output(proc.stdout)
+    dat = parse_ledger_output(proc.stdout)
+
+    return MonthlyReport(year, month, dat)
 
 def parse_ledger_output(output: bytes) -> Dict[str, str]:
     "return a dict "
@@ -64,6 +73,8 @@ def parse_ledger_output(output: bytes) -> Dict[str, str]:
 if __name__=='__main__':
     start = (2018, 5)
 
-    for year,month in until_now(2018,5):
-        print(f"== {year}-{month} ==")
-        print(ledger_monthly_bal(year, month))
+    ledger_dicts = [ledger_monthly(year, month)
+        for year, month in until_now(2018,5)]
+
+    for tmp in ledger_dicts:
+        print(tmp)
