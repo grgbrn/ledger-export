@@ -3,7 +3,7 @@ import datetime
 import os
 import subprocess
 from dataclasses import dataclass
-from typing import Dict, Tuple, Iterator, List
+from typing import Dict, Tuple, Iterator, List, Set
 
 def until_now(year: int, month: int) -> Iterator[Tuple[int, int]]:
     "returns (year,month) tuples from starting point until now (inclusive)"
@@ -76,10 +76,12 @@ def parse_ledger_output(output: bytes) -> Dict[str, str]:
         currency = line[0:split_index].strip()
         category = line[split_index:].strip()
 
-        if category == "" and currency != "":
-            print(f"skipping unknown spending of amount:{currency}")
+        if category == "":
+            if currency != "":
+                print(f"skipping unknown spending of amount:{currency}")
             continue
 
+        # XXX this can cause a collision if there are two currency types?!?!
         dat[category] = currency
 
     return dat
@@ -90,5 +92,22 @@ if __name__=='__main__':
     ledger_dicts = [ledger_monthly(year, month)
         for year, month in until_now(2018,5)]
 
-    for tmp in ledger_dicts:
-        print(tmp)
+    # find the complete set of categories listed
+    # across all months
+    all_categories: Set[str] = set()
+
+    for report in ledger_dicts:
+        all_categories.update(report.data.keys())
+    #print(sorted(all_categories))
+
+    # now use master category list to generate sparse csv
+    # header row containing date column labels
+    header = ['Category']
+    header.extend(["{:d}/{:02d}".format(r.year, r.month) for r in ledger_dicts])
+    print(header)
+
+    # then a row for each category, values for each monthly report
+    for cat in sorted(all_categories):
+        row = [cat]
+        row.extend([r.data.get(cat, '') for r in ledger_dicts])
+        print(row)
