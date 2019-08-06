@@ -3,7 +3,7 @@ import datetime
 import os
 import subprocess
 from dataclasses import dataclass
-from typing import Dict, Tuple, Iterator
+from typing import Dict, Tuple, Iterator, List
 
 def until_now(year: int, month: int) -> Iterator[Tuple[int, int]]:
     "returns (year,month) tuples from starting point until now (inclusive)"
@@ -44,7 +44,7 @@ def ledger_monthly(year: int, month: int) -> MonthlyReport:
     end_str = "{:d}/{:02d}/01".format(end.year, end.month)
 
     cmd = ["ledger", "bal", "-s", "-b", start_str, "-e", end_str, "--flat", "--no-total", "Expenses"]
-    #print(cmd)
+    # print(cmd)
 
     proc = subprocess.run(cmd, capture_output=True)
     proc.check_returncode()
@@ -53,25 +53,39 @@ def ledger_monthly(year: int, month: int) -> MonthlyReport:
 
     return MonthlyReport(year, month, dat)
 
+def find_split_index(lines: List[str]) -> int:
+    for line in lines:
+        ix = line.find("Expenses")
+        if ix != -1:
+            return ix
+    assert False, "can't figure out how to split output"
+
 def parse_ledger_output(output: bytes) -> Dict[str, str]:
     "return a dict "
     s = output.decode('utf-8')
 
-    dat = {}
-    for line in s.split(os.linesep):
-        vals = line.strip().split()
+    dat: Dict[str,str] = {}
+    lines = s.split(os.linesep)
 
-        if len(vals) != 2:
-            print("skipping row:" + line)
+    # find where to split the lines - ledger output is
+    # carefully indented
+    assert len(lines) > 0
+    split_index = find_split_index(lines)
+
+    for line in s.split(os.linesep):
+        currency = line[0:split_index].strip()
+        category = line[split_index:].strip()
+
+        if category == "" and currency != "":
+            print(f"skipping unknown spending of amount:{currency}")
             continue
 
-        v,k = vals
-        dat[k] = v
+        dat[category] = currency
 
     return dat
 
 if __name__=='__main__':
-    start = (2018, 5)
+    start = (2019, 5)
 
     ledger_dicts = [ledger_monthly(year, month)
         for year, month in until_now(2018,5)]
