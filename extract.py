@@ -134,30 +134,41 @@ def parse_ledger_output(output: bytes) -> Dict[str, str]:
 
 def main(start_year: int, start_month: int):
 
-    ledger_dicts = [ledger_monthly(year, month)
+    reports = [ledger_monthly(year, month)
         for year, month in until_now(start_year,start_month)]
 
-    # find the complete set of categories listed
+    # find the complete set of categories & currencies
     # across all months
     all_categories: Set[str] = set()
+    all_currencies: Set[Currency] = set()
 
-    for report in ledger_dicts:
+    for report in reports:
         all_categories.update(report.get_all_categories())
+        all_currencies.update(report.get_currencies())
+
+    print("=" * 60)
+    print(all_currencies)
     print(sorted(all_categories))
+    print("=" * 60)
 
-    """
-    # now use master category list to generate sparse csv
-    # header row containing date column labels
-    header = ['Category']
-    header.extend(["{:d}/{:02d}".format(r.year, r.month) for r in ledger_dicts])
-    print(header)
+    # XXX this sort of works but needs to be cleaned up
+    # XXX definitely needs per-currency categories
+    for currency in all_currencies:
+        print(currency)
 
-    # then a row for each category, values for each monthly report
-    for cat in sorted(all_categories):
-        row = [cat]
-        row.extend([r.data.get(cat, '') for r in ledger_dicts])
-        print(row)
-    """
+        ledger_dicts = [report.data[currency] for report in reports]
+
+        # now use master category list to generate sparse csv
+        # header row containing date column labels
+        header = ['Category']
+        header.extend(["{:d}/{:02d}".format(r.year, r.month) for r in reports])
+        print(header)
+
+        # then a row for each category, values for each monthly report
+        for cat in sorted(all_categories):
+            row = [cat]
+            row.extend([dat.get(cat, '') for dat in ledger_dicts])
+            print(row)
 
 def test():
     ledger_monthly(2019, 5)
