@@ -155,11 +155,18 @@ def get_csv_formatter(c: Currency) -> Optional[Callable[[str], str]]:
     if c == Currency.EUR:
         def eur_format(s: str) -> str:
             if len(s) == 0:
-                return ""
+                return "€0"
             assert s.endswith(' EUR'), f"Unexpected EUR value:{s}"
             # "€"
             return f"€{s[:-4]}"
         return eur_format
+    elif c == Currency.USD:
+        def usd_format(s: str) -> str:
+            if len(s) == 0:
+                return "$0"
+            else:
+                return s
+        return usd_format
     else:
         return None
 
