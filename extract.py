@@ -1,9 +1,11 @@
 import csv
+import dataclasses
 import datetime
+import enum
 import os
 import subprocess
-from dataclasses import dataclass
-from typing import Dict, Tuple, Iterator, List, Set
+
+from typing import Dict, Tuple, Iterator, List, Set, Optional
 
 def until_now(year: int, month: int) -> Iterator[Tuple[int, int]]:
     "returns (year,month) tuples from starting point until now (inclusive)"
@@ -24,11 +26,48 @@ def dateiter(year: int, month: int) -> Iterator[Tuple[int,int]]:
             month = 1
             year += 1
 
-@dataclass
+class Currency(enum.Enum):
+    USD = 1
+    EUR = 2
+
+def guess_currency(s: str) -> Optional[Currency]:
+    if s.startswith("$"):
+        return Currency.USD
+    elif s.endswith(" EUR"):
+        return Currency.EUR
+    else:
+        return None
+
+@dataclasses.dataclass
 class MonthlyReport:
     year: int
     month: int
-    data: Dict[str,str]
+
+    # store category->balance amounts per-currency
+    data: Dict[Currency, Dict[str,str]] = dataclasses.field(default_factory=dict)
+
+    def add(self, category:str, amount:str):
+        "add a (category,amount) pair into the correct currency dict"
+        c = guess_currency(amount)
+        if c is None:
+            assert False, "unknown currency:" + amount
+
+        d = self.data.get(c, None)
+        if d is None:
+            d = {}
+            self.data[c] = d
+        d[category] = amount
+
+    def get_currencies(self) -> List[Currency]:
+        return list(self.data.keys())
+
+    def get_all_categories(self) -> List[str]:
+        "return all categories for all currencies"
+        all_categories: Set[str] = set()
+        for currency, dat in self.data.items():
+            all_categories.update(dat.keys())
+        return list(all_categories)
+
 
 def ledger_monthly(year: int, month: int) -> MonthlyReport:
     "call ledger to get category balance for a given month"
@@ -44,14 +83,20 @@ def ledger_monthly(year: int, month: int) -> MonthlyReport:
     end_str = "{:d}/{:02d}/01".format(end.year, end.month)
 
     cmd = ["ledger", "bal", "-s", "-b", start_str, "-e", end_str, "--flat", "--no-total", "Expenses"]
-    # print(cmd)
+    print(">> ", ' '.join(cmd))
 
     proc = subprocess.run(cmd, capture_output=True)
     proc.check_returncode()
 
-    dat = parse_ledger_output(proc.stdout)
+    report = MonthlyReport(year, month)
 
-    return MonthlyReport(year, month, dat)
+    # XXX mypy can't catch a missing '.items()' here
+    # XXX it should theoretically check that this unpacking
+    # XXX is legitimate
+    for k,v in parse_ledger_output(proc.stdout).items():
+        report.add(k,v)
+
+    return report
 
 def find_split_index(lines: List[str]) -> int:
     for line in lines:
@@ -61,7 +106,7 @@ def find_split_index(lines: List[str]) -> int:
     assert False, "can't figure out how to split output"
 
 def parse_ledger_output(output: bytes) -> Dict[str, str]:
-    "return a dict "
+    "XXX need to decide exactly what this returns now"
     s = output.decode('utf-8')
 
     dat: Dict[str,str] = {}
@@ -81,25 +126,26 @@ def parse_ledger_output(output: bytes) -> Dict[str, str]:
                 print(f"skipping unknown spending of amount:{currency}")
             continue
 
-        # XXX this can cause a collision if there are two currency types?!?!
+        # XXX this would (and should) cause a collision except i'm parsing it wrong
+        assert category not in dat
         dat[category] = currency
 
     return dat
 
-if __name__=='__main__':
-    start = (2019, 5)
+def main(start_year: int, start_month: int):
 
     ledger_dicts = [ledger_monthly(year, month)
-        for year, month in until_now(2018,5)]
+        for year, month in until_now(start_year,start_month)]
 
     # find the complete set of categories listed
     # across all months
     all_categories: Set[str] = set()
 
     for report in ledger_dicts:
-        all_categories.update(report.data.keys())
-    #print(sorted(all_categories))
+        all_categories.update(report.get_all_categories())
+    print(sorted(all_categories))
 
+    """
     # now use master category list to generate sparse csv
     # header row containing date column labels
     header = ['Category']
@@ -111,3 +157,11 @@ if __name__=='__main__':
         row = [cat]
         row.extend([r.data.get(cat, '') for r in ledger_dicts])
         print(row)
+    """
+
+def test():
+    ledger_monthly(2019, 5)
+
+if __name__=='__main__':
+    main(2018, 5)
+    #test()
