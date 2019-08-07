@@ -5,7 +5,7 @@ import enum
 import os
 import subprocess
 
-from typing import Dict, Tuple, Iterator, List, Set, Optional
+from typing import Callable, Dict, Iterator, List, Optional, Set, Tuple
 
 def until_now(year: int, month: int) -> Iterator[Tuple[int, int]]:
     "returns (year,month) tuples from starting point until now (inclusive)"
@@ -147,19 +147,35 @@ def make_report_name(reports: List[MonthlyReport]) -> str:
     end = reports[-1]
     return "report-{:d}{:02d}_{:d}{:02d}".format(start.year, start.month, end.year, end.month)
 
+def get_csv_formatter(c: Currency) -> Optional[Callable[[str], str]]:
+    """
+    Returns an optional formatting function used to convert values from
+    ledger format into something understood by the external spreadsheet
+    """
+    if c == Currency.EUR:
+        def eur_format(s: str) -> str:
+            if len(s) == 0:
+                return ""
+            assert s.endswith(' EUR'), f"Unexpected EUR value:{s}"
+            # "€"
+            return f"€{s[:-4]}"
+        return eur_format
+    else:
+        return None
+
 def main(start_year: int, start_month: int):
 
-    reports = [ledger_monthly(year, month)
-        for year, month in until_now(start_year,start_month)]
+    reports = [ledger_monthly(year, month) for year, month
+               in until_now(start_year,start_month)]
 
-    # find complete set of currencies for csv files
+    # find complete set of currencies in all reports, so we
+    # can generate one csv file per currency
     all_currencies: Set[Currency] = set()
     for report in reports:
         all_currencies.update(report.get_currencies())
 
     report_basename = make_report_name(reports)
 
-    # generate csv report for each currency
     for currency in all_currencies:
         print(currency.name)
 
@@ -167,6 +183,8 @@ def main(start_year: int, start_month: int):
         all_categories: Set[str] = set()
         for report in reports:
             all_categories.update(report.categories_for(currency))
+
+        value_formatter = get_csv_formatter(currency)
 
         report_filename = f"{report_basename}-{currency.name}.csv"
         print(f"generating {report_filename}")
@@ -182,8 +200,12 @@ def main(start_year: int, start_month: int):
 
             # then a row for each category, values for each monthly report
             for cat in sorted(all_categories):
+                vals = [dat.get(cat, '') for dat in ledger_dicts]
+                if value_formatter:
+                    vals = [value_formatter(v) for v in vals]
+
                 row = [cat]
-                row.extend([dat.get(cat, '') for dat in ledger_dicts])
+                row.extend(vals)
                 csvfile.writerow(row)
 
 def test():
