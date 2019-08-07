@@ -61,12 +61,15 @@ class MonthlyReport:
     def get_currencies(self) -> List[Currency]:
         return list(self.data.keys())
 
-    def get_all_categories(self) -> List[str]:
+    def get_categories(self) -> List[str]:
         "return all categories for all currencies"
         all_categories: Set[str] = set()
         for currency, dat in self.data.items():
             all_categories.update(dat.keys())
         return list(all_categories)
+
+    def categories_for(self, currency: Currency) -> List[str]:
+        return list(self.data_for(currency).keys())
 
     def data_for(self, currency: Currency) -> Dict[str,str]:
         return self.data.get(currency, dict())
@@ -141,26 +144,21 @@ def main(start_year: int, start_month: int):
     reports = [ledger_monthly(year, month)
         for year, month in until_now(start_year,start_month)]
 
-    # find the complete set of categories & currencies
-    # across all months
-    all_categories: Set[str] = set()
+    # find complete set of currencies to generate reports for
     all_currencies: Set[Currency] = set()
 
     for report in reports:
-        all_categories.update(report.get_all_categories())
         all_currencies.update(report.get_currencies())
 
-    print("=" * 60)
     print(all_currencies)
-    print(sorted(all_categories))
-    print("=" * 60)
 
-    # XXX this sort of works but needs to be cleaned up
-    # XXX definitely needs per-currency categories
     for currency in all_currencies:
         print(currency)
 
         ledger_dicts = [report.data_for(currency) for report in reports]
+        all_categories: Set[str] = set()
+        for report in reports:
+            all_categories.update(report.categories_for(currency))
 
         # now use master category list to generate sparse csv
         # header row containing date column labels
