@@ -59,19 +59,22 @@ class MonthlyReport:
         d[category] = amount
 
     def get_currencies(self) -> List[Currency]:
+        "all currencies used in this report"
         return list(self.data.keys())
 
     def get_categories(self) -> List[str]:
-        "return all categories for all currencies"
+        "all categories for all currencies in this report"
         all_categories: Set[str] = set()
         for currency, dat in self.data.items():
             all_categories.update(dat.keys())
         return list(all_categories)
 
     def categories_for(self, currency: Currency) -> List[str]:
+        "get all categories used in a specific currency"
         return list(self.data_for(currency).keys())
 
     def data_for(self, currency: Currency) -> Dict[str,str]:
+        "get category->amount map for a specific currency"
         return self.data.get(currency, dict())
 
 
@@ -139,38 +142,49 @@ def parse_ledger_output(output: bytes) -> List[Tuple[str, str]]:
 
     return result
 
+def make_report_name(reports: List[MonthlyReport]) -> str:
+    start = reports[0]
+    end = reports[-1]
+    return "report-{:d}{:02d}_{:d}{:02d}".format(start.year, start.month, end.year, end.month)
+
 def main(start_year: int, start_month: int):
 
     reports = [ledger_monthly(year, month)
         for year, month in until_now(start_year,start_month)]
 
-    # find complete set of currencies to generate reports for
+    # find complete set of currencies for csv files
     all_currencies: Set[Currency] = set()
-
     for report in reports:
         all_currencies.update(report.get_currencies())
 
-    print(all_currencies)
+    report_basename = make_report_name(reports)
 
+    # generate csv report for each currency
     for currency in all_currencies:
-        print(currency)
+        print(currency.name)
 
         ledger_dicts = [report.data_for(currency) for report in reports]
         all_categories: Set[str] = set()
         for report in reports:
             all_categories.update(report.categories_for(currency))
 
-        # now use master category list to generate sparse csv
-        # header row containing date column labels
-        header = ['Category']
-        header.extend(["{:d}/{:02d}".format(r.year, r.month) for r in reports])
-        print(header)
+        report_filename = f"{report_basename}-{currency.name}.csv"
+        print(f"generating {report_filename}")
 
-        # then a row for each category, values for each monthly report
-        for cat in sorted(all_categories):
-            row = [cat]
-            row.extend([dat.get(cat, '') for dat in ledger_dicts])
-            print(row)
+        with open(report_filename, 'w', newline='') as f:
+            csvfile = csv.writer(f, quoting=csv.QUOTE_MINIMAL)
+
+            # now use master category list to generate sparse csv
+            # header row containing date column labels
+            header = ['Category']
+            header.extend(["{:d}/{:02d}".format(r.year, r.month) for r in reports])
+            csvfile.writerow(header)
+
+            # then a row for each category, values for each monthly report
+            for cat in sorted(all_categories):
+                row = [cat]
+                row.extend([dat.get(cat, '') for dat in ledger_dicts])
+                csvfile.writerow(row)
 
 def test():
     ledger_monthly(2019, 5)
