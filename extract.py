@@ -68,6 +68,9 @@ class MonthlyReport:
             all_categories.update(dat.keys())
         return list(all_categories)
 
+    def data_for(self, currency: Currency) -> Dict[str,str]:
+        return self.data.get(currency, dict())
+
 
 def ledger_monthly(year: int, month: int) -> MonthlyReport:
     "call ledger to get category balance for a given month"
@@ -83,17 +86,14 @@ def ledger_monthly(year: int, month: int) -> MonthlyReport:
     end_str = "{:d}/{:02d}/01".format(end.year, end.month)
 
     cmd = ["ledger", "bal", "-s", "-b", start_str, "-e", end_str, "--flat", "--no-total", "Expenses"]
-    print(">> ", ' '.join(cmd))
+    #print(">> ", ' '.join(cmd))
 
     proc = subprocess.run(cmd, capture_output=True)
     proc.check_returncode()
 
     report = MonthlyReport(year, month)
 
-    # XXX mypy can't catch a missing '.items()' here
-    # XXX it should theoretically check that this unpacking
-    # XXX is legitimate
-    for k,v in parse_ledger_output(proc.stdout).items():
+    for k,v in parse_ledger_output(proc.stdout):
         report.add(k,v)
 
     return report
@@ -105,32 +105,36 @@ def find_split_index(lines: List[str]) -> int:
             return ix
     assert False, "can't figure out how to split output"
 
-def parse_ledger_output(output: bytes) -> Dict[str, str]:
-    "XXX need to decide exactly what this returns now"
+def parse_ledger_output(output: bytes) -> List[Tuple[str, str]]:
     s = output.decode('utf-8')
 
-    dat: Dict[str,str] = {}
-    lines = s.split(os.linesep)
+    result: List[Tuple[str, str]] = []
+
+    # split lines and filter whitespace
+    lines = [l for l in s.split(os.linesep) if len(l.strip()) > 0]
 
     # find where to split the lines - ledger output is
     # carefully indented
     assert len(lines) > 0
     split_index = find_split_index(lines)
 
-    for line in s.split(os.linesep):
+    # process these backwards to make it easier to handle
+    # omitted categories, but build up the result list
+    # in the original order
+    last_category: Optional[str] = None
+    for line in reversed(lines):
         currency = line[0:split_index].strip()
         category = line[split_index:].strip()
 
         if category == "":
-            if currency != "":
-                print(f"skipping unknown spending of amount:{currency}")
-            continue
+            assert last_category is not None, f"Can't determine category for amount:{currency}"
+            category = last_category
+        else:
+            last_category = category
 
-        # XXX this would (and should) cause a collision except i'm parsing it wrong
-        assert category not in dat
-        dat[category] = currency
+        result.insert(0, (category, currency))
 
-    return dat
+    return result
 
 def main(start_year: int, start_month: int):
 
@@ -156,7 +160,7 @@ def main(start_year: int, start_month: int):
     for currency in all_currencies:
         print(currency)
 
-        ledger_dicts = [report.data[currency] for report in reports]
+        ledger_dicts = [report.data_for(currency) for report in reports]
 
         # now use master category list to generate sparse csv
         # header row containing date column labels
